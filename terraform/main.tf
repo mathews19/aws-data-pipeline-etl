@@ -1,22 +1,7 @@
 # ========================================
-# AWS Data Pipeline - Terraform Configuration
-# ========================================
-# 
-# Este arquivo define toda a infraestrutura AWS necessária para o projeto:
-# - S3 Buckets (raw, processed, scripts)
-# - DynamoDB Table
-# - IAM Roles e Policies
-# - Lambda Function
-# - Glue Job
-# - CloudWatch Logs
-#
-# Como usar:
-#   terraform init
-#   terraform plan
-#   terraform apply
+# AWS Data Pipeline - Terraform Configuration for LOCALSTACK
 # ========================================
 
-# ========== TERRAFORM CONFIGURATION ==========
 
 terraform {
   required_version = ">= 1.0"
@@ -27,72 +12,69 @@ terraform {
       version = "~> 5.0"
     }
   }
-  
-  # Opcional: Backend para armazenar state remotamente
-  # Descomente quando quiser usar S3 para state
-  # backend "s3" {
-  #   bucket = "seu-bucket-terraform-state"
-  #   key    = "data-pipeline/terraform.tfstate"
-  #   region = "us-east-1"
-  # }
 }
 
-# ========== PROVIDER CONFIGURATION ==========
+# ========== PROVIDER PARA LOCALSTACK ==========
 
 provider "aws" {
   region = var.aws_region
   
-  # Tags padrão aplicadas a todos os recursos
-  default_tags {
-    tags = {
-      Project     = "AWS-Data-Pipeline"
-      Environment = var.environment
-      ManagedBy   = "Terraform"
-      Owner       = var.owner
-    }
+  # Credenciais fake - LocalStack não valida
+  access_key = "test"
+  secret_key = "test"
+  
+  # IMPORTANTE: Aponta para LocalStack ao invés da AWS real
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  
+  # Endpoints do LocalStack
+  endpoints {
+    s3             = "http://localhost:4566"
+    dynamodb       = "http://localhost:4566"
+    lambda         = "http://localhost:4566"
+    iam            = "http://localhost:4566"
+    cloudwatch     = "http://localhost:4566"
+    logs           = "http://localhost:4566"
+    sns            = "http://localhost:4566"
+    sqs            = "http://localhost:4566"
+    apigateway     = "http://localhost:4566"
+    # Glue não é bem suportado no LocalStack free tier
+    # glue           = "http://localhost:4566"
   }
 }
-
-# ========== DATA SOURCES ==========
-
-# Obter account ID atual
-data "aws_caller_identity" "current" {}
-
-# Obter região atual
-data "aws_region" "current" {}
 
 # ========== LOCALS ==========
 
 locals {
-  # Prefixo para nomear recursos
   name_prefix = "${var.project_name}-${var.environment}"
   
-  # Account ID
-  account_id = data.aws_caller_identity.current.account_id
-  
-  # Região
-  region = data.aws_region.current.name
-  
-  # Tags comuns
   common_tags = {
     Project     = var.project_name
     Environment = var.environment
+    ManagedBy   = "Terraform"
+    LocalStack  = "true"
   }
 }
 
 # ========== S3 BUCKETS ==========
 
-# Bucket para dados RAW (entrada)
+# Bucket para dados RAW
 resource "aws_s3_bucket" "raw_data" {
   bucket = "${local.name_prefix}-raw-data"
   
+  # LocalStack não suporta force_destroy nas versões antigas
+  # mas é útil para desenvolvimento
+  force_destroy = true
+  
   tags = merge(local.common_tags, {
-    Name = "Raw Data Bucket"
+    Name    = "Raw Data Bucket"
     Purpose = "Store incoming raw data files"
   })
 }
 
-# Versionamento do bucket raw
+# No LocalStack, configurações de bucket são simplificadas
+# Versionamento
 resource "aws_s3_bucket_versioning" "raw_data" {
   bucket = aws_s3_bucket.raw_data.id
   
@@ -101,38 +83,18 @@ resource "aws_s3_bucket_versioning" "raw_data" {
   }
 }
 
-# Criptografia do bucket raw
-resource "aws_s3_bucket_server_side_encryption_configuration" "raw_data" {
-  bucket = aws_s3_bucket.raw_data.id
-  
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-# Bloqueio de acesso público
-resource "aws_s3_bucket_public_access_block" "raw_data" {
-  bucket = aws_s3_bucket.raw_data.id
-  
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-# Bucket para dados PROCESSADOS (saída)
+# Bucket para dados PROCESSADOS
 resource "aws_s3_bucket" "processed_data" {
   bucket = "${local.name_prefix}-processed-data"
   
+  force_destroy = true
+  
   tags = merge(local.common_tags, {
-    Name = "Processed Data Bucket"
-    Purpose = "Store processed data in Parquet format"
+    Name    = "Processed Data Bucket"
+    Purpose = "Store processed data"
   })
 }
 
-# Configurações do bucket processed (mesmas do raw)
 resource "aws_s3_bucket_versioning" "processed_data" {
   bucket = aws_s3_bucket.processed_data.id
   
@@ -141,60 +103,34 @@ resource "aws_s3_bucket_versioning" "processed_data" {
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "processed_data" {
-  bucket = aws_s3_bucket.processed_data.id
-  
-  rule {
-    apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
-    }
-  }
-}
-
-resource "aws_s3_bucket_public_access_block" "processed_data" {
-  bucket = aws_s3_bucket.processed_data.id
-  
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
-
-# Bucket para scripts (Lambda e Glue)
+# Bucket para scripts
 resource "aws_s3_bucket" "scripts" {
   bucket = "${local.name_prefix}-scripts"
   
+  force_destroy = true
+  
   tags = merge(local.common_tags, {
-    Name = "Scripts Bucket"
+    Name    = "Scripts Bucket"
     Purpose = "Store Lambda and Glue scripts"
   })
 }
 
-resource "aws_s3_bucket_versioning" "scripts" {
-  bucket = aws_s3_bucket.scripts.id
-  
-  versioning_configuration {
-    status = "Enabled"
-  }
-}
-
 # ========== DYNAMODB TABLE ==========
 
-# Tabela para controle de execuções
 resource "aws_dynamodb_table" "pipeline_executions" {
-  name           = "${local.name_prefix}-executions"
-  billing_mode   = "PAY_PER_REQUEST"  # On-demand, sem provisionamento
-  hash_key       = "execution_id"
-  range_key      = "timestamp"
+  name         = "${local.name_prefix}-executions"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "execution_id"
+  range_key    = "timestamp"
   
   attribute {
     name = "execution_id"
-    type = "S"  # String
+    type = "S"
   }
   
   attribute {
     name = "timestamp"
-    type = "S"  # String (ISO format)
+    type = "S"
   }
   
   attribute {
@@ -202,17 +138,12 @@ resource "aws_dynamodb_table" "pipeline_executions" {
     type = "S"
   }
   
-  # Index secundário para buscar por status
+  # Global Secondary Index
   global_secondary_index {
     name            = "status-index"
     hash_key        = "status"
     range_key       = "timestamp"
     projection_type = "ALL"
-  }
-  
-  # Point-in-time recovery
-  point_in_time_recovery {
-    enabled = true
   }
   
   tags = merge(local.common_tags, {
@@ -222,7 +153,7 @@ resource "aws_dynamodb_table" "pipeline_executions" {
 
 # ========== IAM ROLES ==========
 
-# Role para Lambda
+# IAM Role para Lambda
 resource "aws_iam_role" "lambda_role" {
   name = "${local.name_prefix}-lambda-role"
   
@@ -282,7 +213,8 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
           "dynamodb:PutItem",
           "dynamodb:GetItem",
           "dynamodb:UpdateItem",
-          "dynamodb:Query"
+          "dynamodb:Query",
+          "dynamodb:Scan"
         ]
         Resource = [
           aws_dynamodb_table.pipeline_executions.arn,
@@ -293,42 +225,10 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
   })
 }
 
-# Policy para Lambda escrever logs
-resource "aws_iam_role_policy_attachment" "lambda_logs" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# Role para Glue
-resource "aws_iam_role" "glue_role" {
-  name = "${local.name_prefix}-glue-role"
-  
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "glue.amazonaws.com"
-        }
-      }
-    ]
-  })
-  
-  tags = local.common_tags
-}
-
-# Policy gerenciada para Glue
-resource "aws_iam_role_policy_attachment" "glue_service" {
-  role       = aws_iam_role.glue_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
-}
-
-# Policy customizada para Glue acessar S3
-resource "aws_iam_role_policy" "glue_s3_policy" {
-  name = "glue-s3-access"
-  role = aws_iam_role.glue_role.id
+# Policy para Lambda logs (simplificada para LocalStack)
+resource "aws_iam_role_policy" "lambda_logs_policy" {
+  name = "lambda-logs-access"
+  role = aws_iam_role.lambda_role.id
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -336,19 +236,11 @@ resource "aws_iam_role_policy" "glue_s3_policy" {
       {
         Effect = "Allow"
         Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket"
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
         ]
-        Resource = [
-          aws_s3_bucket.raw_data.arn,
-          "${aws_s3_bucket.raw_data.arn}/*",
-          aws_s3_bucket.processed_data.arn,
-          "${aws_s3_bucket.processed_data.arn}/*",
-          aws_s3_bucket.scripts.arn,
-          "${aws_s3_bucket.scripts.arn}/*"
-        ]
+        Resource = "arn:aws:logs:*:*:*"
       }
     ]
   })
@@ -356,7 +248,7 @@ resource "aws_iam_role_policy" "glue_s3_policy" {
 
 # ========== LAMBDA FUNCTION ==========
 
-# CloudWatch Log Group para Lambda
+# CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${local.name_prefix}-trigger"
   retention_in_days = 7
@@ -365,28 +257,39 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 }
 
 # Lambda Function
+# NOTA: Você precisa criar o lambda_function.zip primeiro
 resource "aws_lambda_function" "trigger_pipeline" {
-  filename         = "lambda_function.zip"  # Você vai criar este ZIP
+  # Para este exemplo, vamos criar um ZIP dummy
+  # Na prática, você usaria seu código real
+  filename         = "lambda_function.zip"
   function_name    = "${local.name_prefix}-trigger"
   role            = aws_iam_role.lambda_role.arn
   handler         = "trigger_pipeline.lambda_handler"
-  source_code_hash = filebase64sha256("lambda_function.zip")
+  source_code_hash = fileexists("lambda_function.zip") ? filebase64sha256("lambda_function.zip") : ""
   runtime         = "python3.11"
   timeout         = 60
   memory_size     = 256
   
   environment {
     variables = {
-      GLUE_JOB_NAME        = aws_glue_job.transform_sales.name
       EXECUTIONS_TABLE     = aws_dynamodb_table.pipeline_executions.name
+      RAW_BUCKET           = aws_s3_bucket.raw_data.id
       PROCESSED_BUCKET     = aws_s3_bucket.processed_data.id
       ENVIRONMENT          = var.environment
+      # Adiciona flag para saber que está no LocalStack
+      IS_LOCALSTACK        = "true"
+      DYNAMODB_ENDPOINT    = "http://localhost:4566"
+      S3_ENDPOINT          = "http://localhost:4566"
     }
   }
   
   tags = local.common_tags
   
-  depends_on = [aws_cloudwatch_log_group.lambda_logs]
+  depends_on = [
+    aws_cloudwatch_log_group.lambda_logs,
+    aws_iam_role_policy.lambda_s3_policy,
+    aws_iam_role_policy.lambda_dynamodb_policy
+  ]
 }
 
 # Permissão para S3 invocar Lambda
@@ -398,7 +301,8 @@ resource "aws_lambda_permission" "allow_s3" {
   source_arn    = aws_s3_bucket.raw_data.arn
 }
 
-# Notificação S3 para Lambda
+# S3 Bucket Notification
+# NOTA: No LocalStack pode não funcionar perfeitamente
 resource "aws_s3_bucket_notification" "raw_data_notification" {
   bucket = aws_s3_bucket.raw_data.id
   
@@ -412,74 +316,26 @@ resource "aws_s3_bucket_notification" "raw_data_notification" {
   depends_on = [aws_lambda_permission.allow_s3]
 }
 
-# ========== GLUE JOB ==========
-
-# CloudWatch Log Group para Glue
-resource "aws_cloudwatch_log_group" "glue_logs" {
-  name              = "/aws-glue/jobs/${local.name_prefix}-transform-sales"
-  retention_in_days = 7
-  
-  tags = local.common_tags
-}
-
-# Glue Job
-resource "aws_glue_job" "transform_sales" {
-  name     = "${local.name_prefix}-transform-sales"
-  role_arn = aws_iam_role.glue_role.arn
-  
-  command {
-    name            = "glueetl"
-    script_location = "s3://${aws_s3_bucket.scripts.bucket}/glue/etl_transform_sales.py"
-    python_version  = "3"
-  }
-  
-  default_arguments = {
-    "--job-language"                     = "python"
-    "--job-bookmark-option"              = "job-bookmark-enable"
-    "--enable-metrics"                   = "true"
-    "--enable-continuous-cloudwatch-log" = "true"
-    "--enable-spark-ui"                  = "true"
-    "--spark-event-logs-path"            = "s3://${aws_s3_bucket.scripts.bucket}/spark-logs/"
-    "--TempDir"                          = "s3://${aws_s3_bucket.scripts.bucket}/temp/"
-    "--SOURCE_BUCKET"                    = aws_s3_bucket.raw_data.id
-    "--TARGET_BUCKET"                    = aws_s3_bucket.processed_data.id
-    "--CURRENCY_CONVERSION_RATE"         = "5.0"
-  }
-  
-  # Configuração de recursos
-  glue_version      = "4.0"  # Versão mais recente do Glue
-  max_retries       = 1
-  timeout           = 60  # minutos
-  number_of_workers = 2
-  worker_type       = "G.1X"  # 1 DPU por worker
-  
-  tags = local.common_tags
-}
-
-# ========== GLUE CATALOG DATABASE ==========
-
-resource "aws_glue_catalog_database" "sales_db" {
-  name        = "${local.name_prefix}_sales_db"
-  description = "Database for sales data"
-  
-  location_uri = "s3://${aws_s3_bucket.processed_data.bucket}/sales/"
-}
-
 # ========== SNS TOPIC (OPCIONAL) ==========
 
-# Tópico SNS para notificações
 resource "aws_sns_topic" "pipeline_notifications" {
   name = "${local.name_prefix}-notifications"
   
   tags = local.common_tags
 }
 
-# Subscription de email (você precisa confirmar manualmente)
-resource "aws_sns_topic_subscription" "email" {
-  count     = var.notification_email != "" ? 1 : 0
-  topic_arn = aws_sns_topic.pipeline_notifications.arn
-  protocol  = "email"
-  endpoint  = var.notification_email
+# ========== SQS QUEUE (OPCIONAL - Para testes) ==========
+
+resource "aws_sqs_queue" "pipeline_queue" {
+  name = "${local.name_prefix}-queue"
+  
+  # Configurações simplificadas para LocalStack
+  delay_seconds             = 0
+  max_message_size          = 262144  # 256 KB
+  message_retention_seconds = 86400   # 1 dia
+  receive_wait_time_seconds = 0
+  
+  tags = local.common_tags
 }
 
 # ========== OUTPUTS ==========
@@ -487,6 +343,11 @@ resource "aws_sns_topic_subscription" "email" {
 output "raw_bucket_name" {
   description = "Nome do bucket de dados raw"
   value       = aws_s3_bucket.raw_data.id
+}
+
+output "raw_bucket_arn" {
+  description = "ARN do bucket raw"
+  value       = aws_s3_bucket.raw_data.arn
 }
 
 output "processed_bucket_name" {
@@ -504,9 +365,9 @@ output "lambda_function_name" {
   value       = aws_lambda_function.trigger_pipeline.function_name
 }
 
-output "glue_job_name" {
-  description = "Nome do Glue job"
-  value       = aws_glue_job.transform_sales.name
+output "lambda_function_arn" {
+  description = "ARN da função Lambda"
+  value       = aws_lambda_function.trigger_pipeline.arn
 }
 
 output "dynamodb_table_name" {
@@ -514,12 +375,37 @@ output "dynamodb_table_name" {
   value       = aws_dynamodb_table.pipeline_executions.name
 }
 
-output "glue_database_name" {
-  description = "Nome do banco de dados no Glue Catalog"
-  value       = aws_glue_catalog_database.sales_db.name
-}
-
 output "sns_topic_arn" {
   description = "ARN do tópico SNS"
   value       = aws_sns_topic.pipeline_notifications.arn
 }
+
+output "sqs_queue_url" {
+  description = "URL da fila SQS"
+  value       = aws_sqs_queue.pipeline_queue.url
+}
+
+# ========== COMANDOS ÚTEIS ==========
+# 
+# Após terraform apply, você pode testar:
+#
+# 1. Listar buckets:
+#    awslocal s3 ls
+#
+# 2. Listar tabelas DynamoDB:
+#    awslocal dynamodb list-tables
+#
+# 3. Listar funções Lambda:
+#    awslocal lambda list-functions
+#
+# 4. Ver detalhes da Lambda:
+#    awslocal lambda get-function --function-name $(terraform output -raw lambda_function_name)
+#
+# 5. Invocar Lambda diretamente:
+#    awslocal lambda invoke --function-name $(terraform output -raw lambda_function_name) output.json
+#
+# 6. Upload arquivo para S3:
+#    echo '{"test": "data"}' > test.json
+#    awslocal s3 cp test.json s3://$(terraform output -raw raw_bucket_name)/raw/sales/test.json
+#
+# ========================================
