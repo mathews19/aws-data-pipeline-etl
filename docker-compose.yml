@@ -1,0 +1,42 @@
+services:
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack_main
+    ports:
+      - "4566:4566"  # Porta principal do LocalStack
+      - "4571:4571"  # Porta legacy (opcional)
+    environment:
+      # Serviços AWS que você vai usar
+      SERVICES: lambda,dynamodb,apigateway,s3,sqs,sns,cloudwatch,logs,iam,sts,cloudformation
+      
+      # Debug habilitado (ver logs detalhados)
+      DEBUG: 1
+      
+      # Onde salvar dados
+      DATA_DIR: /tmp/localstack/data
+      
+      # Como executar Lambdas (docker = mais realista)
+      LAMBDA_EXECUTOR: docker
+      
+      # Persistência entre reinicializações
+      PERSISTENCE: 1
+      
+      # Docker socket para Lambda executor
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      # Socket do Docker (IMPORTANTE para Lambdas funcionarem)
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      
+      # Persistir dados localmente
+      - "./localstack_data:/tmp/localstack"
+      
+      # Mapear código fonte (hot reload!)
+      - "./lambda:/app/lambda:ro"
+      - "./glue:/app/glue:ro"
+    networks:
+      - localstack-network
+    restart: unless-stopped
+
+networks:
+  localstack-network:
+    driver: bridge
