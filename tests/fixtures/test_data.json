@@ -1,0 +1,81 @@
+{
+  "valid_single_record": {
+    "sale_id": "S001",
+    "product": "Laptop",
+    "amount": "1500.00",
+    "date": "2025-01-15",
+    "customer_id": "C001",
+    "region": "SP"
+  },
+  
+  "valid_multiple_records": [
+    {
+      "sale_id": "S001",
+      "product": "Laptop",
+      "amount": "1500.00",
+      "date": "2025-01-15",
+      "customer_id": "C001",
+      "region": "SP"
+    },
+    {
+      "sale_id": "S002",
+      "product": "Mouse",
+      "amount": "50.00",
+      "date": "2025-01-15",
+      "customer_id": "C002",
+      "region": "RJ"
+    },
+    {
+      "sale_id": "S003",
+      "product": "Keyboard",
+      "amount": "150.00",
+      "date": "2025-01-16"
+    }
+  ],
+  
+  "missing_required_field": {
+    "sale_id": "S001",
+    "product": "Laptop"
+  },
+  
+  "invalid_data_types": {
+    "sale_id": 123,
+    "product": "Laptop",
+    "amount": "invalid_number",
+    "date": "invalid_date"
+  },
+  
+  "minimal_valid_record": {
+    "sale_id": "S001",
+    "product": "Laptop",
+    "amount": "100.00",
+    "date": "2025-01-15"
+  },
+  
+  "record_with_all_fields": {
+    "sale_id": "S999",
+    "product": "Premium Laptop",
+    "amount": "9999.99",
+    "date": "2025-01-15",
+    "customer_id": "C999",
+    "region": "SP",
+    "payment_method": "credit_card",
+    "notes": "VIP customer"
+  },
+  
+  "large_amount": {
+    "sale_id": "S100",
+    "product": "Enterprise Server",
+    "amount": "999999.99",
+    "date": "2025-01-15"
+  },
+  
+  "special_characters": {
+    "sale_id": "S-001",
+    "product": "Laptop (Special Edition) & Accessories",
+    "amount": "1500.00",
+    "date": "2025-01-15",
+    "customer_id": "C@001",
+    "region": "São Paulo"
+  }
+}
